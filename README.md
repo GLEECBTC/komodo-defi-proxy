@@ -27,7 +27,7 @@ Create the configuration file for app runtime.
     {
       "inbound_route": "/dev",
       "outbound_route": "http://localhost:8000",
-      "proxy_type": "quicknode", # available types are: "quicknode", "moralis", "block_pi", "gas_free"
+      "proxy_type": "quicknode", # available types are: "quicknode", "moralis", "block_pi", "gas_free", "lifi"
       "authorized": false,
       "allowed_rpc_methods": [
         "eth_blockNumber",
@@ -57,6 +57,23 @@ GasFree routes keep the GasFree API credentials on the proxy server and forward 
     "gas_free": {
       "api_key": "your-gasfree-api-key",
       "api_secret": "your-gasfree-api-secret"
+    }
+  },
+  "authorized": false,
+  "allowed_rpc_methods": [],
+  "rate_limiter": null
+}
+```
+
+LI.FI routes keep the required API key on the proxy server and replace any inbound `x-lifi-api-key` with the configured key. The inbound prefix is stripped, preserving the remaining path/query and the request method/body:
+
+```json
+{
+  "inbound_route": "/lifi",
+  "outbound_route": "https://li.quest",
+  "proxy_type": {
+    "lifi": {
+      "api_key": "your-lifi-api-key"
     }
   },
   "authorized": false,
