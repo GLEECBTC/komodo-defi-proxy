@@ -32,6 +32,7 @@ pub(crate) enum ProxyType {
     Moralis,
     BlockPi,
     GasFree { api_key: String, api_secret: String },
+    Lifi { api_key: String },
 }
 
 /// Represents the types of payloads that can be processed by the proxy, with each variant tailored to a specific proxy type.
@@ -52,6 +53,8 @@ pub(crate) enum PayloadData {
     },
     /// GasFree feature requires only Signed Message in X-Auth-Payload header; body is forwarded intact.
     GasFree(ProxySign),
+    /// LI.FI feature requires only Signed Message in X-Auth-Payload header; body is forwarded intact.
+    Lifi(ProxySign),
 }
 
 impl PayloadData {
@@ -62,6 +65,7 @@ impl PayloadData {
             PayloadData::Moralis(proxy_sign) => proxy_sign,
             PayloadData::BlockPi { proxy_sign, .. } => proxy_sign,
             PayloadData::GasFree(proxy_sign) => proxy_sign,
+            PayloadData::Lifi(proxy_sign) => proxy_sign,
         }
     }
 }
@@ -97,6 +101,10 @@ pub(crate) async fn generate_payload_from_req(
         ProxyType::GasFree { .. } => {
             let (req, proxy_sign) = parse_auth_header(req).await?;
             Ok((req, PayloadData::GasFree(proxy_sign)))
+        }
+        ProxyType::Lifi { .. } => {
+            let (req, proxy_sign) = parse_auth_header(req).await?;
+            Ok((req, PayloadData::Lifi(proxy_sign)))
         }
     }
 }
@@ -153,6 +161,45 @@ pub(crate) async fn proxy(
         }
         PayloadData::GasFree(proxy_sign) => {
             http::gasfree::proxy(req, remote_addr, proxy_sign, x_forwarded_for, proxy_route).await
+        }
+        PayloadData::Lifi(proxy_sign) => {
+            let api_key = match &proxy_route.proxy_type {
+                ProxyType::Lifi { api_key } => api_key,
+                _ => {
+                    tracked_log(
+                        log::Level::Error,
+                        remote_addr.ip(),
+                        &proxy_sign.address,
+                        req.uri(),
+                        "LI.FI handler received a non-LI.FI route, returning 500.",
+                    );
+                    return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
+                }
+            };
+            let api_key_header = match HeaderValue::from_str(api_key) {
+                Ok(value) => value,
+                Err(_) => {
+                    tracked_log(
+                        log::Level::Error,
+                        remote_addr.ip(),
+                        &proxy_sign.address,
+                        req.uri(),
+                        "Error converting LI.FI API key into HeaderValue, returning 500.",
+                    );
+                    return response_by_status(StatusCode::INTERNAL_SERVER_ERROR);
+                }
+            };
+            let mut req = req;
+            req.headers_mut().insert("x-lifi-api-key", api_key_header);
+            http::get::proxy(
+                cfg,
+                req,
+                remote_addr,
+                proxy_sign,
+                x_forwarded_for,
+                proxy_route,
+            )
+            .await
         }
     }
 }
